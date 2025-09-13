@@ -1,0 +1,23 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=customn8naws.duckdns.org
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - N8N_WEBHOOK_URL= https://mcpservern8n.ddns.net/
+      - WEBHOOK_URL=https://mcpservern8n.ddns.net/      
+      - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY
+      - N8N_TRUSTED_PROXY_RANGES=0.0.0.0/0
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
+      - NODE_TLS_REJECT_UNAUTHORIZED=1
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
