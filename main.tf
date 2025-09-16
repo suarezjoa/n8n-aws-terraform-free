@@ -1,4 +1,4 @@
-# Configurar el Proveedor de AWS
+# Configuración del proveedor AWS
 terraform {
   required_providers {
     aws = {
@@ -6,34 +6,14 @@ terraform {
       version = "~> 5.0"
     }
   }
-  required_version = ">= 1.0"
 }
 
-# Configurar Proveedor AWS
+# Configuración del proveedor
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"
 }
 
-# Variables
-variable "aws_region" {
-  description = "Región de AWS donde se desplegará la infraestructura"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "key_pair_name" {
-  description = "Nombre para el par de llaves SSH"
-  type        = string
-  default     = "n8n-server-key"
-}
-
-variable "instance_name" {
-  description = "Nombre para la instancia EC2"
-  type        = string
-  default     = "n8n-automation-server"
-}
-
-# Fuente de datos para obtener la AMI más reciente de Amazon Linux 2023
+# Data source para obtener la AMI más reciente de Amazon Linux 2023
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -49,144 +29,74 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Obtener VPC por defecto
-data "aws_vpc" "default" {
-  default = true
+# Crear un par de claves (key pair) para SSH
+resource "aws_key_pair" "n8n_key" {
+  key_name   = "n8n-automation-key"
+  public_key = file("~/.ssh/id_rsa.pub") # Ruta a tu clave pública SSH
 }
 
-# Obtener subredes por defecto en la primera zona de disponibilidad
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# Crear un nuevo par de llaves
-resource "tls_private_key" "n8n_key" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "aws_key_pair" "n8n_key_pair" {
-  key_name   = var.key_pair_name
-  public_key = tls_private_key.n8n_key.public_key_openssh
-
-  tags = {
-    Name = "n8n-server-keypair"
-  }
-}
-
-# Guardar llave privada en archivo local
-resource "local_file" "private_key" {
-  content  = tls_private_key.n8n_key.private_key_pem
-  filename = "${var.key_pair_name}.pem"
-  file_permission = "0400"
-}
-
-# Grupo de Seguridad para el servidor n8n
+# Crear grupo de seguridad
 resource "aws_security_group" "n8n_sg" {
-  name_prefix = "n8n-server-sg"
-  description = "Grupo de seguridad para el servidor de automatizacion n8n"
-  vpc_id      = data.aws_vpc.default.id
+  name        = "n8n-automation-sg"
+  description = "Security group for n8n automation server"
 
-  # Acceso SSH
+  # SSH desde cualquier lugar
   ingress {
-    description = "Acceso SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH access"
   }
 
-  # Acceso HTTP
+  # HTTP desde cualquier lugar
   ingress {
-    description = "Acceso HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP access"
   }
 
-  # Acceso HTTPS
+  # HTTPS desde cualquier lugar
   ingress {
-    description = "Acceso HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS access"
   }
 
-  # Puerto n8n (para acceso directo si es necesario)
-  ingress {
-    description = "Acceso directo a n8n"
-    from_port   = 5678
-    to_port     = 5678
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Todo el tráfico saliente
+  # Permitir todo el tráfico saliente
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "All outbound traffic"
   }
 
   tags = {
-    Name = "n8n-server-security-group"
+    Name = "n8n-automation-sg"
   }
 }
 
-# Instancia EC2
+# Crear la instancia EC2
 resource "aws_instance" "n8n_server" {
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "t2.micro"
-  key_name      = aws_key_pair.n8n_key_pair.key_name
+  key_name      = aws_key_pair.n8n_key.key_name
 
   vpc_security_group_ids = [aws_security_group.n8n_sg.id]
-  subnet_id              = data.aws_subnets.default.ids[0]
-  
-  # Asegurar asignación de IP pública
-  associate_public_ip_address = true
 
-  # Habilitar monitoreo detallado (opcional, gratuito para t2.micro)
-  monitoring = true
-
-  # Opciones de metadatos de instancia (buena práctica de seguridad)
-  metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
-    http_put_response_hop_limit = 1
-  }
-
-  # Configuración del volumen raíz
-  root_block_device {
-    volume_type = "gp3"
-    volume_size = 8  # 8 GB (elegible para capa gratuita)
-    encrypted   = true
-    delete_on_termination = true
-  }
-
-  # Script de configuración inicial para la instancia
-  user_data = base64encode(<<-EOF
+  # Script de inicialización (opcional)
+  user_data = <<-EOF
               #!/bin/bash
               # Actualizar el sistema
               yum update -y
               
-              # Instalar y configurar SSM Agent (ya viene en Amazon Linux 2023 pero aseguramos que esté actualizado)
-              yum install -y amazon-ssm-agent
-              systemctl start amazon-ssm-agent
-              systemctl enable amazon-ssm-agent
-              
-              # Instalar paquetes necesarios
-              yum install -y docker git nginx python3-pip
-              
-              # Instalar Certbot
-              pip3 install certbot certbot-nginx
-              
-              # Configurar Docker
+              # Instalar Docker
+              yum install -y docker
               systemctl start docker
               systemctl enable docker
               usermod -a -G docker ec2-user
@@ -196,49 +106,114 @@ resource "aws_instance" "n8n_server" {
               chmod +x /usr/local/bin/docker-compose
               ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
               
-              # Configurar Nginx
+              # Instalar Nginx
+              yum install -y nginx
               systemctl start nginx
               systemctl enable nginx
-            
+              
+              # Instalar Certbot (Let's Encrypt) desde EPEL
+              yum install -y epel-release
+              yum install -y certbot python3-certbot-nginx
+              
+              # Crear configuración básica de Nginx
+              sudo cat > /etc/nginx/conf.d/n8nserver.conf << 'NGINXCONF'
+              server {
+                  listen 80;
+                  server_name TU DOMINIO_AQUI; # Reemplaza con tu dominio
+                  
+                  location / {
+                      proxy_pass http://localhost:5678;
+                      proxy_set_header Connection '';
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                      proxy_buffering off;
+                      proxy_buffer_size 16k;
+                      proxy_busy_buffers_size 24k;
+                      proxy_buffers 64 4k;
+                      chunked_transfer_encoding off;
+                  }
+                  
+                  # For websocket support (used by n8n editor)
+                  location /socket.io/ {
+                      proxy_pass http://localhost:5678/socket.io/;
+                      proxy_set_header Host $host;
+                      proxy_http_version 1.1;
+                      proxy_set_header Upgrade $http_upgrade;
+                      proxy_set_header Connection "upgrade";
+                  }
+                  
+                  # Let's Encrypt validation
+                  location /.well-known/acme-challenge/ {
+                      root /var/www/html;
+                  }
+              }
+              NGINXCONF
+              
+              # Crear directorio web para Let's Encrypt
+              mkdir -p /var/www/html
+              
+              # Reiniciar Nginx para aplicar configuración
+              systemctl restart nginx
+              
+              # Obtener certificado SSL automáticamente
+              certbot --nginx -d TU DNS VA AQUI --non-interactive --agree-tos --email TU EMAIL VA AQUI
+
+              # Configurar renovación automática de certificados
+              echo "0 12 * * * /usr/bin/certbot renew --quiet" | crontab -
+              
+              # Crear docker-compose.yml para n8n
+              mkdir -p /opt/automation-server
+              cat > /opt/automation-server/docker-compose.yml << 'DOCKERCOMPOSE'
+              services:
+                n8n:
+                  image: n8nio/n8n:latest
+                  restart: always
+                  ports:
+                    - "5678:5678"
+                  environment:
+                    - N8N_HOST= TU DNS VA AQUI
+                    - N8N_PROTOCOL=https
+                    - N8N_PORT=5678
+                    - N8N_WEBHOOK_URL= https://TU DNS VA AQUI
+                    - WEBHOOK_URL= https://TU DNS VA AQUI    
+                    - NODE_ENV=production
+                    - N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY
+                    - N8N_TRUSTED_PROXY_RANGES=0.0.0.0/0
+                    - N8N_RUNNERS_ENABLED=true
+                    - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
+                    - NODE_TLS_REJECT_UNAUTHORIZED=1
+                  volumes:
+                    - n8n_data:/home/node/.n8n
+              
+              volumes:
+                n8n_data:
+              DOCKERCOMPOSE
+              
+              # Iniciar n8n automáticamente
+              cd /opt/automation-server
+              docker-compose up -d
               EOF
-  )
 
   tags = {
-    Name = var.instance_name
-    Environment = "production"
-    Application = "n8n"
-    Description = "n8n automation server with Docker and Nginx"
+    Name = "n8n-automation-server"
   }
 }
 
-# Salidas (Outputs)
-output "instance_id" {
-  description = "ID de la instancia EC2"
-  value       = aws_instance.n8n_server.id
-}
-
+# Output para mostrar información importante
 output "instance_public_ip" {
-  description = "Dirección IP pública de la instancia EC2"
+  description = "Dirección IP pública de la instancia"
   value       = aws_instance.n8n_server.public_ip
 }
 
 output "instance_public_dns" {
-  description = "Nombre DNS público de la instancia EC2"
+  description = "DNS público de la instancia"
   value       = aws_instance.n8n_server.public_dns
 }
 
 output "ssh_connection_command" {
-  description = "Comando SSH para conectarse a la instancia"
-  value       = "ssh -i ${var.key_pair_name}.pem ec2-user@${aws_instance.n8n_server.public_ip}"
-}
-
-output "security_group_id" {
-  description = "ID del grupo de seguridad"
-  value       = aws_security_group.n8n_sg.id
-}
-
-output "private_key_filename" {
-  description = "Nombre del archivo de la llave privada"
-  value       = "${var.key_pair_name}.pem"
-  sensitive   = true
+  description = "Comando para conectarse via SSH"
+  value       = "ssh -i ~/.ssh/id_rsa ec2-user@${aws_instance.n8n_server.public_ip}"
 }
