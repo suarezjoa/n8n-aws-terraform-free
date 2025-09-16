@@ -7,7 +7,9 @@ Despliega una instancia EC2 completa con N8N, SSL automático y Nginx en **solo 
 - **AWS CLI** configurado con credenciales
 - **Terraform** instalado (versión ≥ 1.0)
 - **Par de claves SSH** (se generará automáticamente si no existe)
-- **Dominio DNS** apuntando a tu futura IP pública
+- **Dominio DNS** tenes un dominio o subdominio y apuntarlo a nuestra IP publica de la instancia EC2 una vez creada (moficiar el archivo main.tf en los apartados       "TU_DOMINIO_AQUI" y "TU_MAIL_AQUI")
+
+Si no tienes una Dominio puedes obtener uno gratis usando https://my.noip.com/
 
 ---
 
