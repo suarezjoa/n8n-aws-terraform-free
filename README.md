@@ -234,6 +234,6 @@ terraform destroy
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/)
 - [Let's Encrypt](https://letsencrypt.org/)
 - [AWS Free Tier](https://aws.amazon.com/free/)
-
+- [Medium](https://medium.com/@mmartinmainan/running-n8n-for-free-on-aws-a-self-hosting-guide-for-n8n-lovers-4e367727f45e)
 
 **¡Listo!** Tu servidor N8N con SSL automático está funcionando 🎉
