@@ -119,7 +119,7 @@ resource "aws_instance" "n8n_server" {
               sudo cat > /etc/nginx/conf.d/n8nserver.conf << 'NGINXCONF'
               server {
                   listen 80;
-                  server_name mcpservern8n.ddns.net;
+                  server_name TU_DOMINIO_AQUI;
                   
                   location / {
                       proxy_pass http://localhost:5678;
@@ -159,7 +159,7 @@ resource "aws_instance" "n8n_server" {
               systemctl restart nginx
               
               # Obtener certificado SSL automáticamente
-              certbot --nginx -d mcpservern8n.ddns.net --non-interactive --agree-tos --email gnoattosuarezjoaquin@gmail.com
+              certbot --nginx -d TU_DOMINIO_AQUI --non-interactive --agree-tos --email TU_MAIL_AQUI
               
               # Configurar renovación automática de certificados
               echo "0 12 * * * /usr/bin/certbot renew --quiet" | crontab -
@@ -174,11 +174,11 @@ resource "aws_instance" "n8n_server" {
                   ports:
                     - "5678:5678"
                   environment:
-                    - N8N_HOST=mcpservern8n.ddns.net
+                    - N8N_HOST=TU_DOMINIO_AQUI
                     - N8N_PROTOCOL=https
                     - N8N_PORT=5678
-                    - N8N_WEBHOOK_URL= https://mcpservern8n.ddns.net/
-                    - WEBHOOK_URL=https://mcpservern8n.ddns.net/      
+                    - N8N_WEBHOOK_URL= https://TU_DOMINIO_AQUI
+                    - WEBHOOK_URL=https://TU_DOMINIO_AQUI
                     - NODE_ENV=production
                     - N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY
                     - N8N_TRUSTED_PROXY_RANGES=0.0.0.0/0
