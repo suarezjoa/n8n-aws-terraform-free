@@ -118,37 +118,39 @@ resource "aws_instance" "n8n_server" {
               # Crear configuración básica de Nginx
               sudo cat > /etc/nginx/conf.d/n8nserver.conf << 'NGINXCONF'
               server {
-                  listen 80;
                   server_name TU_DOMINIO_AQUI;
                   
                   location / {
                       proxy_pass http://localhost:5678;
-                      proxy_set_header Connection '';
-                      proxy_http_version 1.1;
                       proxy_set_header Host $host;
                       proxy_set_header X-Real-IP $remote_addr;
                       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                       proxy_set_header X-Forwarded-Proto $scheme;
-                      proxy_buffering off;
-                      proxy_buffer_size 16k;
-                      proxy_busy_buffers_size 24k;
-                      proxy_buffers 64 4k;
-                      chunked_transfer_encoding off;
-                  }
-                  
-                  # For websocket support (used by n8n editor)
-                  location /socket.io/ {
-                      proxy_pass http://localhost:5678/socket.io/;
-                      proxy_set_header Host $host;
+                      
+                      # WebSocket support
                       proxy_http_version 1.1;
                       proxy_set_header Upgrade $http_upgrade;
                       proxy_set_header Connection "upgrade";
+                      
+                      # Timeouts para WebSocket
+                      proxy_read_timeout 86400;
+                      proxy_send_timeout 86400;
                   }
-                  
-                  # Let's Encrypt validation
-                  location /.well-known/acme-challenge/ {
-                      root /var/www/html;
+
+                  listen 443 ssl;
+                  ssl_certificate /etc/letsencrypt/live/TU_DOMINIO_AQUI/fullchain.pem;
+                  ssl_certificate_key /etc/letsencrypt/live/TU_DOMINIO_AQUI/privkey.pem;
+                  include /etc/letsencrypt/options-ssl-nginx.conf;
+                  ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+              }
+
+              server {
+                  if ($host = TU_DOMINIO_AQUI) {
+                      return 301 https://$host$request_uri;
                   }
+                  listen 80;
+                  server_name TU_DOMINIO_AQUI;
+                  return 404;
               }
               NGINXCONF
               
@@ -170,24 +172,25 @@ resource "aws_instance" "n8n_server" {
               services:
                 n8n:
                   image: n8nio/n8n:latest
+                  container_name: n8n
                   restart: always
                   ports:
                     - "5678:5678"
                   environment:
-                    - N8N_HOST=TU_DOMINIO_AQUI
-                    - N8N_PROTOCOL=https
+                    - N8N_HOST=0.0.0.0
                     - N8N_PORT=5678
-                    - N8N_WEBHOOK_URL= https://TU_DOMINIO_AQUI
-                    - WEBHOOK_URL=https://TU_DOMINIO_AQUI
+                    - N8N_PROTOCOL=http
+                    - WEBHOOK_URL=https://TU_DOMINIO_AQUI/
                     - NODE_ENV=production
-                    - N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY
-                    - N8N_TRUSTED_PROXY_RANGES=0.0.0.0/0
-                    - N8N_RUNNERS_ENABLED=true
-                    - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
-                    - NODE_TLS_REJECT_UNAUTHORIZED=1
+                    - N8N_BASIC_AUTH_ACTIVE=true
+                    - N8N_BASIC_AUTH_USER=admin
+                    - N8N_BASIC_AUTH_PASSWORD=changeme123
+                    # Configuración para WebSocket
+                    - N8N_PUSH_BACKEND=websocket
+                    - N8N_EDITOR_BASE_URL=https://TU_DOMINIO_AQUI
                   volumes:
                     - n8n_data:/home/node/.n8n
-              
+
               volumes:
                 n8n_data:
               DOCKERCOMPOSE
